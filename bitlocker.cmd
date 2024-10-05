@@ -19,8 +19,9 @@ REM Go UAC to get Admin privileges
 :goADMIN
     pushd "%CD%"
     CD /D "%~dp0"
-:: Define directory for temporary BitLocker files
+:: Define variables
 set BITLOCKER_DIR=%temp%\Bitlocker
+set LOGFILE=%BITLOCKER_DIR%\bitlocker.log
 
 :: Create directory if it doesn't exist
 if not exist "%BITLOCKER_DIR%" (
@@ -91,17 +92,20 @@ cls
 echo ========================================
 echo        Check BitLocker Status
 echo ========================================
-for /f "tokens=1,2 delims=:" %%A in ('manage-bde -status ^| findstr /i "Volume"') do (
-    echo Volume: %%A
-    manage-bde -status %%A
-    echo.
-)
-pause
+echo Checking BitLocker status on all drives...
+manage-bde -status > "%LOGFILE%"
+type "%LOGFILE%"
+PAUSE
 goto manageBitLockerStatus
 
 :showActivityLog
 cls
-echo BitLocker activity log not implemented yet.
+echo off
+echo ========================================
+echo        BitLocker Activity Log
+echo ========================================
+:: Check if the event log file exists and display it, or show a message if it doesn't
+(dir /b %LOGFILE% > nul 2>&1 && type "%LOGFILE%" || echo No BitLocker activity log found.)
 pause
 goto manageBitLockerStatus
 
