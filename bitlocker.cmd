@@ -93,6 +93,8 @@ echo ========================================
 echo        Check BitLocker Status
 echo ========================================
 echo Checking BitLocker status on all drives...
+set LOGFILE=%temp%\bitlocker_status.log
+if exist "%LOGFILE%" del "%LOGFILE%"
 manage-bde -status > "%LOGFILE%"
 type "%LOGFILE%"
 PAUSE
@@ -231,8 +233,21 @@ goto recoverySecurityOptions
 :: ===========================================
 :checkTPMStatus
 cls
-echo Check TPM Status
-powershell "Get-WmiObject -Namespace root\cimv2\security\microsofttpm -Class Win32_Tpm"
+echo ========================================
+echo        Check TPM Status
+echo ========================================
+setlocal
+set LOGFILE=%temp%\tpm_status.log
+
+:: Clear the log file if it exists
+if exist "%LOGFILE%" del "%LOGFILE%"
+
+:: Check TPM status and write to the log file
+wmic /namespace:\\root\cimv2\security\microsofttpm path win32_tpm get /value > "%LOGFILE%" 2>&1
+
+:: Display the log file
+type "%LOGFILE%"
+endlocal
 pause
 goto MainMenu
 
