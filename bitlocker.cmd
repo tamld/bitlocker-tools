@@ -43,14 +43,14 @@ echo =  6. Exit                                =
 echo ===========================================
 choice /N /C 123456 /M "Your choice is: "
 
-if errorlevel 6 goto :Exit
+if errorlevel 6 goto Exit
 if errorlevel 5 call :checkTPMStatus
 if errorlevel 4 call :recoverySecurityOptions
 if errorlevel 3 call :lockUnlockBitLocker
 if errorlevel 2 call :configureBitLocker
 if errorlevel 1 call :manageBitLockerStatus
 
-goto :MainMenu
+::goto MainMenu
 
 :: ===========================================
 :: Function: Manage BitLocker Status
@@ -67,24 +67,24 @@ echo =  3. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 123 /M "Your choice is: "
 
-if errorlevel 3 goto :MainMenu
+if errorlevel 3 goto MainMenu
 if errorlevel 2 call :showActivityLog
 if errorlevel 1 call :checkBitLockerStatus
 
-goto :manageBitLockerStatus
+::goto manageBitLockerStatus
 
 :checkBitLockerStatus
 cls
 echo Checking BitLocker status for all drives...
 manage-bde -status
 pause
-goto :EOF
+goto manageBitLockerStatus
 
 :showActivityLog
 cls
 echo BitLocker activity log not implemented yet.
 pause
-goto :EOF
+goto manageBitLockerStatus
 
 :: ===========================================
 :: Function: Configure BitLocker
@@ -102,30 +102,30 @@ echo =  4. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 1234 /M "Your choice is: "
 
-if errorlevel 4 goto :MainMenu
+if errorlevel 4 goto MainMenu
 if errorlevel 3 call :encryptUSBDrive
 if errorlevel 2 call :disableBitLocker
 if errorlevel 1 call :enableBitLocker
 
-goto :configureBitLocker
+goto configureBitLocker
 
 :enableBitLocker
 cls
 echo Enable BitLocker not implemented yet.
 pause
-goto :EOF
+goto configureBitLocker
 
 :disableBitLocker
 cls
 echo Disable BitLocker not implemented yet.
 pause
-goto :EOF
+goto configureBitLocker
 
 :encryptUSBDrive
 cls
 echo Encrypt USB drive not implemented yet.
 pause
-goto :EOF
+goto configureBitLocker
 
 :: ===========================================
 :: Function: Lock/Unlock BitLocker Volumes
@@ -143,30 +143,30 @@ echo =  4. Back to Main Menu                     =
 echo =============================================
 choice /N /C 1234 /M "Your choice is: "
 
-if errorlevel 4 goto :MainMenu
+if errorlevel 4 goto MainMenu
 if errorlevel 3 call :unlockBitLockerVolumeUSB
 if errorlevel 2 call :unlockBitLockerVolumePassword
 if errorlevel 1 call :lockBitLockerVolume
 
-goto :lockUnlockBitLocker
+::goto lockUnlockBitLocker
 
 :lockBitLockerVolume
 cls
 echo Lock BitLocker volume not implemented yet.
 pause
-goto :EOF
+goto lockUnlockBitLocker
 
 :unlockBitLockerVolumePassword
 cls
 echo Unlock BitLocker volume with password not implemented yet.
 pause
-goto :EOF
+goto lockUnlockBitLocker
 
 :unlockBitLockerVolumeUSB
 cls
 echo Unlock BitLocker volume with USB not implemented yet.
 pause
-goto :EOF
+goto lockUnlockBitLocker
 
 :: ===========================================
 :: Function: Recovery and Security Options
@@ -183,17 +183,17 @@ echo =  3. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 123 /M "Your choice is: "
 
-if errorlevel 3 goto :MainMenu
+if errorlevel 3 goto MainMenu
 if errorlevel 2 call :exportRecoveryKey
 if errorlevel 1 call :recoverWithRecoveryKey
 
-goto :recoverySecurityOptions
+::goto recoverySecurityOptions
 
 :recoverWithRecoveryKey
 cls
 echo Recover with Recovery Key not implemented yet.
 pause
-goto :EOF
+goto recoverySecurityOptions
 
 :exportRecoveryKey
 cls
@@ -201,7 +201,7 @@ echo Exporting Recovery Key to "%BITLOCKER_DIR%\RecoveryKey.txt"...
 :: Here we would run the command to export the recovery key
 echo (Command to export key not yet implemented)
 pause
-goto :EOF
+goto recoverySecurityOptions
 
 :: ===========================================
 :: Function: Check TPM Status
@@ -211,7 +211,7 @@ cls
 echo Check TPM Status
 powershell "Get-WmiObject -Namespace root\cimv2\security\microsofttpm -Class Win32_Tpm"
 pause
-goto :EOF
+goto MainMenu
 
 :: Exit function
 :Exit
