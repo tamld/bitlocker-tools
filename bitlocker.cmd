@@ -30,9 +30,24 @@ if not exist "%BITLOCKER_DIR%" (
 :: Main menu
 :MainMenu
 cls
+echo ".--------------------------------------------------------------."
+echo "| ____  _ _   _            _                                   |"
+echo "|| __ )(_) |_| | ___   ___| | _____ _ __                       |"
+echo "||  _ \| | __| |/ _ \ / __| |/ / _ \ '__|                      |"
+echo "|| |_) | | |_| | (_) | (__|   <  __/ |                         |"
+echo "||____/|_|\__|_|\___/ \___|_|\_\___|_|                     _   |"
+echo "||  \/  | __ _ _ __   __ _  __ _  ___ _ __ ___   ___ _ __ | |_ |"
+echo "|| |\/| |/ _` | '_ \ / _` |/ _` |/ _ \ '_ ` _ \ / _ \ '_ \| __||"
+echo "|| |  | | (_| | | | | (_| | (_| |  __/ | | | | |  __/ | | | |_ |"
+echo "||_|__|_|\__,_|_| |_|\__,_|\__, |\___|_| |_| |_|\___|_| |_|\__||"
+echo "||_   _|__   ___ | |___    |___/                               |"
+echo "|  | |/ _ \ / _ \| / __|                                       |"
+echo "|  | | (_) | (_) | \__ \                                       |"
+echo "|  |_|\___/ \___/|_|___/                                       |"
+echo "'--------------------------------------------------------------'"
 echo.
-echo ===========================================
-echo =          BitLocker Management           =
+rem echo ===========================================
+rem echo =          BitLocker Management           =
 echo ===========================================
 echo =  1. Manage BitLocker Status             =
 echo =  2. Configure BitLocker                 =
@@ -43,14 +58,12 @@ echo =  6. Exit                                =
 echo ===========================================
 choice /N /C 123456 /M "Your choice is: "
 
-if errorlevel 6 goto Exit
-if errorlevel 5 call :checkTPMStatus
-if errorlevel 4 call :recoverySecurityOptions
-if errorlevel 3 call :lockUnlockBitLocker
-if errorlevel 2 call :configureBitLocker
-if errorlevel 1 call :manageBitLockerStatus
-
-::goto MainMenu
+if %errorlevel% == 6 goto Exit
+if %errorlevel% == 5 goto checkTPMStatus
+if %errorlevel% == 4 goto recoverySecurityOptions
+if %errorlevel% == 3 goto lockUnlockBitLocker
+if %errorlevel% == 2 goto configureBitLocker
+if %errorlevel% == 1 goto manageBitLockerStatus
 
 :: ===========================================
 :: Function: Manage BitLocker Status
@@ -67,16 +80,22 @@ echo =  3. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 123 /M "Your choice is: "
 
-if errorlevel 3 goto MainMenu
-if errorlevel 2 call :showActivityLog
-if errorlevel 1 call :checkBitLockerStatus
+if %errorlevel% ==  == 3 goto MainMenu
+if %errorlevel% ==  == 2 goto showActivityLog
+if %errorlevel% ==  == 1 goto checkBitLockerStatus
 
-::goto manageBitLockerStatus
+endlocal
 
 :checkBitLockerStatus
 cls
-echo Checking BitLocker status for all drives...
-manage-bde -status
+echo ========================================
+echo        Check BitLocker Status
+echo ========================================
+for /f "tokens=1,2 delims=:" %%A in ('manage-bde -status ^| findstr /i "Volume"') do (
+    echo Volume: %%A
+    manage-bde -status %%A
+    echo.
+)
 pause
 goto manageBitLockerStatus
 
@@ -102,10 +121,10 @@ echo =  4. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 1234 /M "Your choice is: "
 
-if errorlevel 4 goto MainMenu
-if errorlevel 3 call :encryptUSBDrive
-if errorlevel 2 call :disableBitLocker
-if errorlevel 1 call :enableBitLocker
+if %errorlevel% ==  == 4 goto MainMenu
+if %errorlevel% ==  == 3 call :encryptUSBDrive
+if %errorlevel% ==  == 2 call :disableBitLocker
+if %errorlevel% ==  == 1 call :enableBitLocker
 
 goto configureBitLocker
 
@@ -143,10 +162,10 @@ echo =  4. Back to Main Menu                     =
 echo =============================================
 choice /N /C 1234 /M "Your choice is: "
 
-if errorlevel 4 goto MainMenu
-if errorlevel 3 call :unlockBitLockerVolumeUSB
-if errorlevel 2 call :unlockBitLockerVolumePassword
-if errorlevel 1 call :lockBitLockerVolume
+if %errorlevel% ==  == 4 goto MainMenu
+if %errorlevel% ==  == 3 call :unlockBitLockerVolumeUSB
+if %errorlevel% ==  == 2 call :unlockBitLockerVolumePassword
+if %errorlevel% ==  == 1 call :lockBitLockerVolume
 
 ::goto lockUnlockBitLocker
 
@@ -183,9 +202,9 @@ echo =  3. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 123 /M "Your choice is: "
 
-if errorlevel 3 goto MainMenu
-if errorlevel 2 call :exportRecoveryKey
-if errorlevel 1 call :recoverWithRecoveryKey
+if %errorlevel% ==  == 3 goto MainMenu
+if %errorlevel% ==  == 2 call :exportRecoveryKey
+if %errorlevel% ==  == 1 call :recoverWithRecoveryKey
 
 ::goto recoverySecurityOptions
 
