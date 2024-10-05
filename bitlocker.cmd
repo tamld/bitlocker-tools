@@ -20,13 +20,11 @@ REM Go UAC to get Admin privileges
     pushd "%CD%"
     CD /D "%~dp0"
 :: Define variables
-set BITLOCKER_DIR=%temp%\Bitlocker
-set LOGFILE=%BITLOCKER_DIR%\bitlocker.log
+set "BITLOCKER_DIR=%temp%\Bitlocker"
+set "LOGFILE=%BITLOCKER_DIR%\bitlocker.log"
 
 :: Create directory if it doesn't exist
-if not exist "%BITLOCKER_DIR%" (
-    mkdir "%BITLOCKER_DIR%"
-)
+dir /b %BITLOCKER_DIR% > nul 2>&1 || mkdir %BITLOCKER_DIR%
 
 :: Main menu
 :MainMenu
@@ -93,7 +91,7 @@ echo ========================================
 echo        Check BitLocker Status
 echo ========================================
 echo Checking BitLocker status on all drives...
-set LOGFILE=%temp%\bitlocker_status.log
+set "LOGFILE=%BITLOCKER_DIR%\bitlocker_status.log"
 if exist "%LOGFILE%" del "%LOGFILE%"
 manage-bde -status > "%LOGFILE%"
 type "%LOGFILE%"
@@ -237,7 +235,7 @@ echo ========================================
 echo        Check TPM Status
 echo ========================================
 setlocal
-set LOGFILE=%temp%\tpm_status.log
+set "LOGFILE=%BITLOCKER_DIR%\tpm_status.log"
 
 :: Clear the log file if it exists
 if exist "%LOGFILE%" del "%LOGFILE%"
