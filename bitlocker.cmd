@@ -26,6 +26,36 @@ set "LOGFILE=%BITLOCKER_DIR%\bitlocker.log"
 :: Create directory if it doesn't exist
 dir /b %BITLOCKER_DIR% > nul 2>&1 || mkdir %BITLOCKER_DIR%
 
+:: Enable ANSI escape codes
+for /f "tokens=2 delims==" %%i in ('"prompt $E" ^& for %%i in (1) do rem') do set "ESC=%%i"
+
+:: Define color codes
+set COLOR_BLACK=[30m>nul
+set COLOR_BLUE=[34m>nul
+set COLOR_CYAN=[36m>nul
+set COLOR_GREEN=[32m>nul
+set COLOR_PURPLE=[35m>nul
+set COLOR_RED=[31m>nul
+set COLOR_WHITE=[37m>nul
+set COLOR_YELLOW=[33m>nul
+set COLOR_BRIGHTBLACK=[1;30m>nul
+set COLOR_BRIGHTBLUE=[1;34m>nul
+set COLOR_BRIGHTCYAN=[1;36m>nul
+set COLOR_BRIGHTGREEN=[1;32m>nul
+set COLOR_BRIGHTPURPLE=[1;35m>nul
+set COLOR_BRIGHTRED=[1;31m>nul
+set COLOR_BRIGHTWHITE=[1;37m>nul
+set COLOR_BRIGHTYELLOW=[1;33m>nul
+set COLOR_BG_BLACK=[40m>nul
+set COLOR_BG_BLUE=[44m>nul
+set COLOR_BG_CYAN=[46m>nul
+set COLOR_BG_GREEN=[42m>nul
+set COLOR_BG_PURPLE=[45m>nul
+set COLOR_BG_RED=[41m>nul
+set COLOR_BG_WHITE=[47m>nul
+set COLOR_BG_YELLOW=[43m>nul
+set COLOR_RESET=[0m>nul
+
 :: Main menu
 :MainMenu
 cls
@@ -132,9 +162,195 @@ if %errorlevel% ==  == 1 call :enableBitLocker
 
 goto configureBitLocker
 
+:: Functions to enable BitLocker
 :enableBitLocker
 cls
-echo Enable BitLocker not implemented yet.
+echo off
+echo ========================================
+echo        Enable BitLocker
+echo ========================================
+setlocal enabledelayedexpansion
+set LOGFILE=%BITLOCKER_DIR%\bitlocker_enable.log
+
+:: Clear the log file if it exists
+if exist "%LOGFILE%" del "%LOGFILE%"
+
+:: Check Windows edition and write to the log file
+echo Checking Windows edition... >> "%LOGFILE%"
+wmic os get Caption, Version, OSArchitecture /format:list >> "%LOGFILE%" >NUL 2>&1
+
+:: Check TPM status and write to the log file
+echo Checking TPM status... >> "%LOGFILE%"
+wmic /namespace:\\root\cimv2\security\microsofttpm path win32_tpm get /value >> "%LOGFILE%" >NUL 2>&1
+
+:: Read Windows edition directly using wmic
+for /f "tokens=2 delims==" %%A in ('wmic os get Caption /value ^| findstr /i "Caption"') do set WIN_EDITION=%%A
+
+:: Read TPM status from the log file
+for /f "tokens=2 delims==" %%A in ('findstr /i "IsEnabled_InitialValue=" "%LOGFILE%"') do set TPM_STATUS=%%A
+
+:: Display the log file
+type "%LOGFILE%"
+
+:: Check if Windows edition is supported
+echo Checking if Windows edition is supported...
+set SUPPORTED_EDITIONS="Microsoft Windows 10 Pro" "Microsoft Windows 10 Enterprise" "Microsoft Windows 10 Education" "Microsoft Windows 11 Pro" "Microsoft Windows 11 Enterprise" "Microsoft Windows 11 Education"
+echo %SUPPORTED_EDITIONS% | findstr /i /c:"%WIN_EDITION%" > nul
+if %errorlevel% neq 0 (
+    echo %COLOR_BLUE%Unsupported Windows edition: %WIN_EDITION%%COLOR_RESET%
+    echo %COLOR_BLUE%This script only supports Windows editions that include BitLocker.%COLOR_RESET%
+    endlocal
+    pause
+    goto manageBitLockerStatus
+)
+echo %COLOR_GREEN%%WIN_EDITION% edition is supported.%COLOR_RESET%
+
+:: Check if TPM is enabled
+echo Checking if TPM is enabled...
+if not "%TPM_STATUS%"=="TRUE" (
+    echo %COLOR_YELLOW%TPM is not enabled.%COLOR_RESET%
+    echo %COLOR_YELLOW%Attempting to enable BitLocker without TPM...%COLOR_RESET%
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v UseAdvancedStartup /t REG_DWORD /d 1 /f > nul 2>&1
+    reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v EnableBDEWithNoTPM /t REG_DWORD /d 1 /f > nul 2>&1
+    echo %COLOR_GREEN%BitLocker configured to work without TPM.%COLOR_RESET%
+)
+PAUSE
+:: List available partitions
+cls
+echo %COLOR_YELLOW%Listing available drive partitions...%COLOR_RESET%
+set "drives="
+
+for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
+    if "%%A"=="Local Fixed Disk" (
+        set "drives=!drives! %%B"
+    )
+)
+cls
+echo Partition Ready for encryption: %drives%
+
+if "!drives!"=="" (
+    echo No available drives found.
+    ping -n 4 localhost > nul
+    goto manageBitLockerStatus
+)
+
+:selectDriveToEncrypt
+:: Set the recovery key path at the beginning
+set "recoveryKeyPath=%BITLOCKER_DIR%\RecoveryKey.txt"
+
+set /p "selectedDrive=Choose a drive to encrypt (e.g., C:): "
+if defined selectedDrive (
+    setlocal enabledelayedexpansion
+    set "selectedDrive=!selectedDrive: =!"
+    echo %COLOR_YELLOW%Selected drive after processing: !selectedDrive!%COLOR_RESET%
+    
+    for %%D in (!drives!) do (
+        if /i "!selectedDrive!"=="%%D" (
+            echo %COLOR_YELLOW%Checking if the partition %%D is already encrypted...%COLOR_RESET%
+            manage-bde -status %%D | findstr /i "Conversion Status" | findstr /i "Encrypted" > nul
+            if !errorlevel! equ 0 (
+                echo %COLOR_GREEN%The partition %%D is already encrypted.%COLOR_RESET%
+                endlocal
+                pause
+                goto configureBitLocker
+            )
+            echo %COLOR_YELLOW%Encrypting drive %%D...%COLOR_RESET%
+            :: Check the value of recoveryKeyPath
+            echo %COLOR_YELLOW%Recovery key path: %recoveryKeyPath%%COLOR_RESET%
+
+            :: Encrypt the drive and write output to file
+            echo Command: manage-bde -on %%D -used -recoverypassword -recoverykey "%recoveryKeyPath%" > %recoveryKeyPath%
+            manage-bde -on %%D -used -recoverypassword -recoverykey "%recoveryKeyPath%" >> %recoveryKeyPath%
+            if !errorlevel! equ 0 (
+                echo %COLOR_GREEN%Drive %%D has been encrypted successfully.%COLOR_RESET%
+                echo %COLOR_YELLOW%Adding key protectors to drive %%D...%COLOR_RESET%
+                manage-bde -protectors -add %%D -recoverypassword >> %recoveryKeyPath%
+                if !errorlevel! equ 0 (
+                    echo %COLOR_GREEN%Key protectors have been added successfully.%COLOR_RESET%
+                    echo %COLOR_GREEN%Recovery key has been saved to %recoveryKeyPath%.%COLOR_RESET%
+                ) else (
+                    echo %COLOR_RED%Failed to add key protectors to drive %%D.%COLOR_RESET%
+                )
+            ) else (
+                echo %COLOR_RED%Failed to encrypt drive %%D.%COLOR_RESET%
+            )
+            :: Display the content of the recovery key file
+            type %recoveryKeyPath%
+            PAUSE
+            endlocal
+            goto configureBitLocker
+        )
+    )
+    endlocal
+)
+echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
+ping -n 4 localhost > nul
+goto selectDriveToEncrypt
+
+:disableBitLocker
+cls
+echo off
+echo ========================================
+echo        Disable BitLocker
+echo ========================================
+setlocal enabledelayedexpansion
+
+:: List available partitions
+echo Listing available drive partitions...
+set "drives="
+
+for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
+    if "%%A"=="Local Fixed Disk" (
+        set "drives=!drives! %%B"
+    )
+)
+cls
+echo Partitions available for decryption: %drives%
+
+if "!drives!"=="" (
+    echo No available drives found.
+    ping -n 4 localhost > nul
+    goto configureBitLocker
+)
+
+:selectDriveToDecrypt
+set /p "selectedDrive=Choose a drive to decrypt (e.g., C:): "
+if defined selectedDrive (
+    setlocal enabledelayedexpansion
+    set "selectedDrive=!selectedDrive: =!"
+    echo %COLOR_YELLOW%Selected drive after processing: !selectedDrive!%COLOR_RESET%
+    for %%D in (!drives!) do (
+        if /i "!selectedDrive!"=="%%D" (
+            echo %COLOR_YELLOW%Checking if the partition %%D is encrypted...%COLOR_RESET%
+            manage-bde -status %%D | findstr /i "Conversion Status" | findstr /i "Fully Encrypted" > nul
+            if !errorlevel! equ 0 (
+                echo %COLOR_YELLOW%Decrypting drive %%D...%COLOR_RESET%
+                manage-bde -off %%D
+                if !errorlevel! equ 0 (
+                    echo %COLOR_GREEN%Drive %%D has been decrypted successfully.%COLOR_RESET%
+                ) else (
+                    echo %COLOR_RED%Failed to decrypt drive %%D.%COLOR_RESET%
+                )
+                PAUSE
+                endlocal
+                goto configureBitLocker
+            ) else (
+                echo %COLOR_RED%The partition %%D is not encrypted.%COLOR_RESET%
+                endlocal
+                pause
+                goto configureBitLocker
+            )
+        )
+    )
+    endlocal
+)
+echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
+ping -n 4 localhost > nul
+goto selectDriveToDecrypt
+
+:encryptUSBDrive
+cls
+echo Encrypt USB drive not implemented yet.
 pause
 goto configureBitLocker
 
@@ -254,3 +470,4 @@ goto MainMenu
 cls
 echo Exiting BitLocker Management...
 exit /b
+
