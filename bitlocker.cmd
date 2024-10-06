@@ -75,8 +75,8 @@ echo "|  | | (_) | (_) | \__ \                                       |"
 echo "|  |_|\___/ \___/|_|___/                                       |"
 echo "'--------------------------------------------------------------'"
 echo.
-rem echo ===========================================
-rem echo =          BitLocker Management           =
+:: echo ===========================================
+:: echo =          BitLocker Management           =
 echo ===========================================
 echo =  1. Manage BitLocker Status             =
 echo =  2. Configure BitLocker                 =
@@ -177,11 +177,11 @@ if exist "%LOGFILE%" del "%LOGFILE%"
 
 :: Check Windows edition and write to the log file
 echo Checking Windows edition... >> "%LOGFILE%"
-wmic os get Caption, Version, OSArchitecture /format:list >> "%LOGFILE%" >NUL 2>&1
+wmic os get Caption, Version, OSArchitecture /format:list >> "%LOGFILE%"
 
 :: Check TPM status and write to the log file
 echo Checking TPM status... >> "%LOGFILE%"
-wmic /namespace:\\root\cimv2\security\microsofttpm path win32_tpm get /value >> "%LOGFILE%" >NUL 2>&1
+wmic /namespace:\\root\cimv2\security\microsofttpm path win32_tpm get /value >> "%LOGFILE%"
 
 :: Read Windows edition directly using wmic
 for /f "tokens=2 delims==" %%A in ('wmic os get Caption /value ^| findstr /i "Caption"') do set WIN_EDITION=%%A
@@ -226,7 +226,7 @@ for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, des
     )
 )
 cls
-echo Partition Ready for encryption: %drives%
+echo %COLOR_GREEN%Partition Ready for encryption: %drives%%COLOR_RESET%
 
 if "!drives!"=="" (
     echo No available drives found.
@@ -235,57 +235,48 @@ if "!drives!"=="" (
 )
 
 :selectDriveToEncrypt
-:: Set the recovery key path at the beginning
-set "recoveryKeyPath=%BITLOCKER_DIR%\RecoveryKey.txt"
+setlocal enabledelayedexpansion
+:: Get the current timestamp using PowerShell
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format 'ddMMyy_HHmmss'"') do set timestamp=%%i
+set outputFile=%temp%\Bitlocker\Bitlocker_Encrypt_%timestamp%.txt
 
-set /p "selectedDrive=Choose a drive to encrypt (e.g., C:): "
-if defined selectedDrive (
-    setlocal enabledelayedexpansion
-    set "selectedDrive=!selectedDrive: =!"
-    echo %COLOR_YELLOW%Selected drive after processing: !selectedDrive!%COLOR_RESET%
-    
-    for %%D in (!drives!) do (
-        if /i "!selectedDrive!"=="%%D" (
-            echo %COLOR_YELLOW%Checking if the partition %%D is already encrypted...%COLOR_RESET%
-            manage-bde -status %%D | findstr /i "Conversion Status" | findstr /i "Encrypted" > nul
-            if !errorlevel! equ 0 (
-                echo %COLOR_GREEN%The partition %%D is already encrypted.%COLOR_RESET%
-                endlocal
-                pause
-                goto configureBitLocker
-            )
-            echo %COLOR_YELLOW%Encrypting drive %%D...%COLOR_RESET%
-            :: Check the value of recoveryKeyPath
-            echo %COLOR_YELLOW%Recovery key path: %recoveryKeyPath%%COLOR_RESET%
+echo %COLOR_YELLOW%Please select a drive to process...%COLOR_RESET%
+set /p "drive=Enter the drive letter (e.g., C): "
 
-            :: Encrypt the drive and write output to file
-            echo Command: manage-bde -on %%D -used -recoverypassword -recoverykey "%recoveryKeyPath%" > %recoveryKeyPath%
-            manage-bde -on %%D -used -recoverypassword -recoverykey "%recoveryKeyPath%" >> %recoveryKeyPath%
-            if !errorlevel! equ 0 (
-                echo %COLOR_GREEN%Drive %%D has been encrypted successfully.%COLOR_RESET%
-                echo %COLOR_YELLOW%Adding key protectors to drive %%D...%COLOR_RESET%
-                manage-bde -protectors -add %%D -recoverypassword >> %recoveryKeyPath%
-                if !errorlevel! equ 0 (
-                    echo %COLOR_GREEN%Key protectors have been added successfully.%COLOR_RESET%
-                    echo %COLOR_GREEN%Recovery key has been saved to %recoveryKeyPath%.%COLOR_RESET%
-                ) else (
-                    echo %COLOR_RED%Failed to add key protectors to drive %%D.%COLOR_RESET%
-                )
-            ) else (
-                echo %COLOR_RED%Failed to encrypt drive %%D.%COLOR_RESET%
-            )
-            :: Display the content of the recovery key file
-            type %recoveryKeyPath%
-            PAUSE
-            endlocal
-            goto configureBitLocker
-        )
-    )
-    endlocal
+:: Check if the drive letter is valid
+if not exist %drive%:\ (
+    echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
+    ping -n 4 localhost > nul
+    goto selectDriveToEncrypt
 )
-echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
-ping -n 4 localhost > nul
-goto selectDriveToEncrypt
+
+echo %COLOR_YELLOW%Encrypting drive %drive%...%COLOR_RESET%
+manage-bde -on %drive%: > nul
+if !errorlevel! equ 0 (
+    echo %COLOR_GREEN%Drive %drive% encrypted successfully.%COLOR_RESET%
+    echo %COLOR_YELLOW%Adding RecoveryPassword to drive %drive%...%COLOR_RESET%
+    manage-bde -protectors -add %drive%: -RecoveryPassword > nul
+    if !errorlevel! equ 0 (
+        echo %COLOR_GREEN%RecoveryPassword added to drive %drive% successfully.%COLOR_RESET%
+        echo %COLOR_YELLOW%Exporting BitLocker protector information to %outputFile%...%COLOR_RESET%
+        manage-bde -protectors -get %drive%: >> "%outputFile%"
+        if !errorlevel! equ 0 (
+            cls
+            type "%outputFile%"
+            echo %COLOR_GREEN%BitLocker protector information has been exported to %outputFile%.%COLOR_RESET%
+            echo %COLOR_BG_YELLOW%Please backup the file %outputFile% carefully. If you lose the recovery key, you will not be able to recover your data.%COLOR_RESET%
+        ) else (
+            echo %COLOR_RED%Failed to export BitLocker protector information.%COLOR_RESET%
+        )
+    ) else (
+        echo %COLOR_RED%Failed to add RecoveryPassword to drive %drive%.%COLOR_RESET%
+    )
+) else (
+    echo %COLOR_RED%Failed to encrypt drive %drive%.%COLOR_RESET%
+)
+PAUSE
+endlocal
+goto configureBitLocker
 
 :disableBitLocker
 cls
