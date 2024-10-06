@@ -285,59 +285,55 @@ echo ========================================
 echo        Disable BitLocker
 echo ========================================
 setlocal enabledelayedexpansion
-
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format 'ddMMyy_HHmmss'"') do set timestamp=%%i
+set outputFile=%temp%\Bitlocker\Bitlocker_Decrypt_%timestamp%.txt
 :: List available partitions
-echo Listing available drive partitions...
-set "drives="
-
+echo %COLOR_YELLOW%Listing available drive partitions...%COLOR_RESET%
 for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
     if "%%A"=="Local Fixed Disk" (
         set "drives=!drives! %%B"
     )
 )
 cls
-echo Partitions available for decryption: %drives%
-
-if "!drives!"=="" (
-    echo No available drives found.
+echo %COLOR_GREEN%List partitions available for decryption: %drives%%COLOR_RESET%
+echo.
+if "%drives%"=="" (
+    echo %COLOR_RED%No available drives found.%COLOR_RESET%
     ping -n 4 localhost > nul
     goto configureBitLocker
 )
 
 :selectDriveToDecrypt
-set /p "selectedDrive=Choose a drive to decrypt (e.g., C:): "
-if defined selectedDrive (
-    setlocal enabledelayedexpansion
-    set "selectedDrive=!selectedDrive: =!"
-    echo %COLOR_YELLOW%Selected drive after processing: !selectedDrive!%COLOR_RESET%
-    for %%D in (!drives!) do (
-        if /i "!selectedDrive!"=="%%D" (
-            echo %COLOR_YELLOW%Checking if the partition %%D is encrypted...%COLOR_RESET%
-            manage-bde -status %%D | findstr /i "Conversion Status" | findstr /i "Fully Encrypted" > nul
-            if !errorlevel! equ 0 (
-                echo %COLOR_YELLOW%Decrypting drive %%D...%COLOR_RESET%
-                manage-bde -off %%D
-                if !errorlevel! equ 0 (
-                    echo %COLOR_GREEN%Drive %%D has been decrypted successfully.%COLOR_RESET%
-                ) else (
-                    echo %COLOR_RED%Failed to decrypt drive %%D.%COLOR_RESET%
-                )
-                PAUSE
-                endlocal
-                goto configureBitLocker
-            ) else (
-                echo %COLOR_RED%The partition %%D is not encrypted.%COLOR_RESET%
-                endlocal
-                pause
-                goto configureBitLocker
-            )
-        )
-    )
-    endlocal
+echo %COLOR_YELLOW%Please select a drive to decrypt from the list above (e.g., C):%COLOR_RESET%
+set /p "drive=Enter the drive letter: "
+
+:: Check if the drive letter is valid
+if not exist %drive%:\ (
+    echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
+    ping -n 4 localhost > nul
+    goto selectDriveToEncrypt
 )
-echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
-ping -n 4 localhost > nul
-goto selectDriveToDecrypt
+
+echo %COLOR_YELLOW%Checking if the partition %drive% is encrypted...%COLOR_RESET%
+manage-bde -status %drive%: | findstr /i "Conversion Status" | findstr /i "Fully Encrypted" > nul
+if !errorlevel! equ 0 (
+    echo %COLOR_YELLOW%Decrypting drive %drive%...%COLOR_RESET%
+    manage-bde -off %drive%: > nul
+    if !errorlevel! equ 0 (
+        cls
+        echo %COLOR_GREEN%Drive %drive% has been decrypted successfully.%COLOR_RESET%
+    ) else (
+        echo %COLOR_RED%Failed to decrypt drive. Please run decryft the partition manually later.%drive%.%COLOR_RESET%
+    )
+    PAUSE
+    endlocal
+    goto configureBitLocker
+) else (
+    echo %COLOR_RED%The partition %drive% is not encrypted.%COLOR_RESET%
+    endlocal
+    pause
+    goto configureBitLocker
+)
 
 :encryptUSBDrive
 cls
@@ -345,17 +341,6 @@ echo Encrypt USB drive not implemented yet.
 pause
 goto configureBitLocker
 
-:disableBitLocker
-cls
-echo Disable BitLocker not implemented yet.
-pause
-goto configureBitLocker
-
-:encryptUSBDrive
-cls
-echo Encrypt USB drive not implemented yet.
-pause
-goto configureBitLocker
 
 :: ===========================================
 :: Function: Lock/Unlock BitLocker Volumes
