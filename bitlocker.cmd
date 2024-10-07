@@ -87,7 +87,7 @@ echo =  6. Exit                                =
 echo ===========================================
 choice /N /C 123456 /M "Your choice is: "
 
-if %errorlevel% == 6 goto Exit
+if %errorlevel% == 6 goto end
 if %errorlevel% == 5 goto checkTPMStatus
 if %errorlevel% == 4 goto recoverySecurityOptions
 if %errorlevel% == 3 goto lockUnlockBitLocker
@@ -348,33 +348,138 @@ goto configureBitLocker
 :lockUnlockBitLocker
 cls
 echo.
-echo =============================================
-echo =       Lock/Unlock BitLocker Volumes       =
-echo =============================================
-echo =  1. Lock a BitLocker volume               =
-echo =  2. Unlock a BitLocker volume (Password)  =
-echo =  3. Unlock a BitLocker volume (USB)       =
-echo =  4. Back to Main Menu                     =
-echo =============================================
+echo ===============================================
+echo =       Lock/Unlock BitLocker Volumes         =
+echo ===============================================
+echo =  1. Lock a BitLocker volume                 =
+echo =  2. Unlock a BitLocker volume (RecoveryKey) =
+echo =  3. Unlock a BitLocker volume (USB)         =
+echo =  4. Back to Main Menu                       =
+echo ===============================================
 choice /N /C 1234 /M "Your choice is: "
 
 if %errorlevel% ==  == 4 goto MainMenu
 if %errorlevel% ==  == 3 call :unlockBitLockerVolumeUSB
-if %errorlevel% ==  == 2 call :unlockBitLockerVolumePassword
+if %errorlevel% ==  == 2 call :unlockBitLockerVolumeRecoveryKey
 if %errorlevel% ==  == 1 call :lockBitLockerVolume
 
 ::goto lockUnlockBitLocker
 
 :lockBitLockerVolume
 cls
-echo Lock BitLocker volume not implemented yet.
-pause
+echo off
+echo ========================================
+echo        Lock BitLocker Volume
+echo ========================================
+setlocal enabledelayedexpansion
+
+:: List available partitions
+echo %COLOR_YELLOW%Listing available drive partitions...%COLOR_RESET%
+set "drives="
+
+:: Use WMIC to get the list of local fixed disks
+for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
+    if "%%A"=="Local Fixed Disk" (
+        set "drives=!drives! %%B"
+    )
+)
+cls
+echo %COLOR_GREEN%List partitions available for locking: %drives%%COLOR_RESET%
+echo.
+if "%drives%"=="" (
+    echo %COLOR_RED%No available drives found.%COLOR_RESET%
+    ping -n 4 localhost > nul
+    goto lockUnlockBitLocker
+)
+
+:selectDriveToLock
+echo %COLOR_YELLOW%Please select a drive to lock from the list above (e.g., C):%COLOR_RESET%
+set /p "drive=Enter the drive letter: "
+
+:: Check if the drive letter is valid and in the list of available drives
+set "validDrive=false"
+for %%D in (%drives%) do (
+    if /I "%%D"=="%drive%" (
+        set "validDrive=true"
+    )
+)
+
+if "%validDrive%"=="false" (
+    echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
+    ping -n 4 localhost > nul
+    goto selectDriveToLock
+)
+
+echo %COLOR_YELLOW%Locking drive %drive%...%COLOR_RESET%
+manage-bde -lock %drive%: > nul
+if !errorlevel! equ 0 (
+    echo %COLOR_GREEN%Drive %drive% has been locked successfully.%COLOR_RESET%
+) else (
+    echo %COLOR_RED%Failed to lock drive %drive%. Please try again.%COLOR_RESET%
+)
+
+PAUSE
+endlocal
 goto lockUnlockBitLocker
 
-:unlockBitLockerVolumePassword
+:unlockBitLockerVolumeRecoveryKey
 cls
-echo Unlock BitLocker volume with password not implemented yet.
-pause
+echo off
+echo ========================================
+echo        Unlock BitLocker Volume
+echo ========================================
+setlocal enabledelayedexpansion
+
+:: List available partitions
+echo %COLOR_YELLOW%Listing available drive partitions...%COLOR_RESET%
+set "drives="
+
+:: Use WMIC to get the list of local fixed disks
+for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
+    if "%%B"=="Local Fixed Disk" (
+        set "drives=!drives! %%A"
+    )
+)
+cls
+echo %COLOR_GREEN%List partitions available for unlocking: %drives%%COLOR_RESET%
+echo.
+if "%drives%"=="" (
+    echo %COLOR_RED%No available drives found.%COLOR_RESET%
+    ping -n 4 localhost > nul
+    goto lockUnlockBitLocker
+)
+
+:selectDriveToUnlock
+echo %COLOR_YELLOW%Please select a drive to unlock from the list above (e.g., C):%COLOR_RESET%
+set /p "drive=Enter the drive letter: "
+
+:: Check if the drive letter is valid and in the list of available drives
+set "validDrive=false"
+for %%D in (%drives%) do (
+    if /I "%%D"=="%drive%" (
+        set "validDrive=true"
+    )
+)
+
+if "%validDrive%"=="false" (
+    echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
+    ping -n 4 localhost > nul
+    goto selectDriveToUnlock
+)
+
+echo %COLOR_YELLOW%Enter the recovery key for the drive %drive%:%COLOR_RESET%
+set /p "recoveryKey=Enter the recovery key: "
+
+echo %COLOR_YELLOW%Unlocking drive %drive%...%COLOR_RESET%
+manage-bde -unlock %drive%: -RecoveryPassword %recoveryKey% > nul
+if !errorlevel! equ 0 (
+    echo %COLOR_GREEN%Drive %drive% has been unlocked successfully.%COLOR_RESET%
+) else (
+    echo %COLOR_RED%Failed to unlock drive %drive%. Please check the recovery key and try again.%COLOR_RESET%
+)
+
+PAUSE
+endlocal
 goto lockUnlockBitLocker
 
 :unlockBitLockerVolumeUSB
@@ -442,7 +547,7 @@ pause
 goto MainMenu
 
 :: Exit function
-:Exit
+:end
 cls
 echo Exiting BitLocker Management...
 exit /b
