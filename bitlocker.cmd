@@ -238,6 +238,7 @@ if "!drives!"=="" (
 setlocal enabledelayedexpansion
 :: Get the current timestamp using PowerShell
 for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format 'ddMMyy_HHmmss'"') do set timestamp=%%i
+set %BITLOCKER_DIR%=%temp%\Bitlocker
 set outputFile=%temp%\Bitlocker\Bitlocker_Encrypt_%timestamp%.txt
 
 echo %COLOR_YELLOW%Please select a drive to process...%COLOR_RESET%
@@ -251,7 +252,8 @@ if not exist %drive%:\ (
 )
 
 echo %COLOR_YELLOW%Encrypting drive %drive%...%COLOR_RESET%
-manage-bde -on %drive%: > nul
+::manage-bde -on %drive%: > nul
+manage-bde -on %drive%: -EncryptionMethod XtsAes128 -RecoveryPassword -Protectors > %outputFile%
 if !errorlevel! equ 0 (
     echo %COLOR_GREEN%Drive %drive% encrypted successfully.%COLOR_RESET%
     echo %COLOR_YELLOW%Adding RecoveryPassword to drive %drive%...%COLOR_RESET%
@@ -336,11 +338,96 @@ if !errorlevel! equ 0 (
 )
 
 :encryptUSBDrive
+
+:: Get timestamp using PowerShell
+for /f %%i in ('powershell -command "Get-Date -Format \"ddMMyyyy-HHmmss\""') do set timestamp=%%i
+
+:: Define a unique log file for USB encryption
+set usbLogFile=%BITLOCKER_DIR%\bitlocker_usb_%timestamp%.log
+
+:: Create directories if they do not exist
+if not exist %BITLOCKER_DIR% (
+    mkdir %BITLOCKER_DIR%
+)
+if not exist %BITLOCKER_DIR% (
+    mkdir %BITLOCKER_DIR%
+)
+
+:setlectUSBDrive
 cls
-echo Encrypt USB drive not implemented yet.
+:: List USB drives
+echo %COLOR_YELLOW%Listing available USB drives...%COLOR_RESET%
+wmic logicaldisk where "drivetype=2" get deviceid, volumename, description
+
+:: Prompt user to select a USB drive
+echo %COLOR_YELLOW%Select the USB drive to encrypt:%COLOR_RESET%
+set /p targetDrive=Enter the drive letter (e.g., E:): 
+
+:: Validate the selected drive
+if not exist %targetDrive%\ (
+    echo %COLOR_RED%Invalid drive selected. Please choose a correct DeviceID from the list above.%COLOR_RESET%
+    ping -n 3 localhost > nul
+    goto setlectUSBDrive
+)
+
+:: Check if BitLocker is already enabled on the drive
+manage-bde -status %targetDrive% | find "Conversion Status" | find "Fully Encrypted"
+if %errorlevel% equ 0 (
+    echo %COLOR_RED%BitLocker is already enabled on this drive.%COLOR_RESET%
+    ping -n 3 localhost > nul
+    goto configureBitLocker
+)
+
+:: Enable BitLocker with AES-256 encryption and a recovery password, only encrypt used space
+echo %COLOR_GREEN%Enabling BitLocker on %targetDrive% with AES-256 encryption (used space only)...%COLOR_RESET%
+manage-bde -on %targetDrive% -RecoveryPassword -RecoveryKey %BITLOCKER_DIR% -EncryptionMethod AES256 -used >> %usbLogFile% 2>&1
+
+:: Check if the BitLocker enable command was successful
+if %errorlevel% neq 0 (
+    echo %COLOR_RED%Failed to enable BitLocker on %targetDrive%.%COLOR_RESET%
+    type %usbLogFile%
+    pause
+    goto configureBitLocker
+)
+
+:: Get and display the protectors
+echo %COLOR_GREEN%Getting the protectors for %targetDrive%...%COLOR_RESET%
+manage-bde -protectors -get %targetDrive% >> %usbLogFile% 2>&1
+
+:: Check if the get protectors command was successful
+if %errorlevel% neq 0 (
+    echo %COLOR_RED%Failed to get protectors for %targetDrive%.%COLOR_RESET%
+    type %usbLogFile%
+    pause
+    goto configureBitLocker
+)
+
+:: Check the encryption status
+call :checkEncryptionStatus %targetDrive%
+
+:: Display the log file content
+type %usbLogFile%
 pause
 goto configureBitLocker
 
+:checkEncryptionStatus
+set targetDrive=%1
+:checkStatusLoop
+:: Get the encryption status
+for /f "tokens=3" %%a in ('manage-bde -status %targetDrive% ^| find "Conversion Status"') do set status=%%a
+for /f "tokens=3" %%a in ('manage-bde -status %targetDrive% ^| find "Percentage Encrypted"') do set percent=%%a
+
+if "%status%"=="Encryption" (
+    echo %COLOR_YELLOW%Encryption in Progress: %percent% completed.%COLOR_RESET%
+    timeout /t 10 > nul
+    goto checkStatusLoop
+) else if "%status%"=="Encrypted" (
+    echo %COLOR_GREEN%BitLocker encryption completed successfully.%COLOR_RESET%
+    exit /b 0
+) else (
+    echo %COLOR_RED%BitLocker encryption failed.%COLOR_RESET%
+    exit /b 1
+)
 
 :: ===========================================
 :: Function: Lock/Unlock BitLocker Volumes
