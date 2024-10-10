@@ -7,7 +7,7 @@ if '%errorlevel%' NEQ '0' (
 ) else (
  goto goADMIN )
 
-REM Go UAC to get Admin privileges
+:: Go UAC to get Admin privileges
 :goUAC
     echo Set UAC = CreateObject^("Shell.Application"^) > "%temp%\getadmin.vbs"
     set params = %*:"=""
@@ -127,13 +127,13 @@ echo =  3. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 123 /M "Your choice is: "
 
-if %errorlevel% ==  == 3 goto MainMenu
-if %errorlevel% ==  == 2 goto showActivityLog
-if %errorlevel% ==  == 1 goto checkBitLockerStatus
+if %errorlevel% ==  3 goto MainMenu
+if %errorlevel% ==  2 goto showActivityLog
+if %errorlevel% ==  1 goto checkBitLockerStatus
 
 endlocal
 
-:checkBitLockerStatus
+:showBitLockerStatus
 cls
 echo ========================================
 echo       Check BitLocker Status
@@ -195,7 +195,6 @@ echo ========================================
 echo        Enable BitLocker
 echo ========================================
 setlocal enabledelayedexpansion
-::echo Check Windows Support
 call :checkSupportedWindowsEdition
 call :checkTPMStatus
 if not "%TPM_STATUS%"=="TRUE" (
@@ -212,15 +211,28 @@ echo ========================================
 echo        Encrypt Drive
 echo ========================================
 setlocal enabledelayedexpansion
-call ::checkTPMStatus
-if not "%TPM_STATUS%"=="TRUE" (
-    call :enableBitlockerWithoutTPM
+call :checkBitlockerStatus
+IF "%BITLOCKER_STATUS%"=="FALSE" (
+    echo %COLOR_RED%Bitlocker cannot run on this system.%COLOR_RESET%
+    ping -n 3 localhost > nul
+    goto configureBitLocker
+) else  (
+    echo %COLOR_GREEN%Bitlocker can run on this system.%COLOR_RESET%
+    call :listPartitions
+    call :promptDriveSelection
+    REM call :checkEncryptionStatus %targetDrive%
+    REM if "%status%"=="Fully Decrypted" (
+        REM echo %COLOR_YELLOW%Drive %targetDrive%: is ready to be encrypted.%COLOR_RESET%
+        REM ping -n 3 localhost > nul
+        REM exit /b 0) else if "%status%"=="Fully Encrypted" ( 
+        REM echo %COLOR_YELLOW%Drive %targetDrive%: is already encrypted.%COLOR_RESET%
+        REM echo %COLOR_YELLOW%Please decrypt the drive before encrypting again or select another drive.%COLOR_RESET%
+        REM echo %COLOR_YELLOW%You can also get the decryption key by using the function create recovery key.%COLOR_RESET%
+        REM ping -n 3 localhost > nul
+        REM goto configureBitLocker
+    REM )
+    call :performEncryptBitlocker
 )
-ping -n 3 localhost > nul
-cls
-call :listPartitions
-call :promptDriveSelection
-call :performEncryptBitlocker
 endlocal
 goto configureBitLocker
 
@@ -240,10 +252,10 @@ echo =  4. Back to Main Menu                       =
 echo ===============================================
 choice /N /C 1234 /M "Your choice is: "
 
-if %errorlevel% ==  == 4 goto MainMenu
-if %errorlevel% ==  == 3 call :unlockBitLockerVolumeUSB
-if %errorlevel% ==  == 2 call :unlockBitLockerVolumeRecoveryKey
-if %errorlevel% ==  == 1 call :lockBitLockerVolume
+if %errorlevel% ==  4 goto MainMenu
+if %errorlevel% ==  3 call :unlockBitLockerVolumeUSB
+if %errorlevel% ==  2 call :unlockBitLockerVolumeRecoveryKey
+if %errorlevel% ==  1 call :lockBitLockerVolume
 
 ::goto lockUnlockBitLocker
 
@@ -385,9 +397,9 @@ echo =  3. Back to Main Menu                   =
 echo ===========================================
 choice /N /C 123 /M "Your choice is: "
 
-if %errorlevel% ==  == 3 goto MainMenu
-if %errorlevel% ==  == 2 call :exportRecoveryKey
-if %errorlevel% ==  == 1 call :recoverWithRecoveryKey
+if %errorlevel% ==  3 goto MainMenu
+if %errorlevel% == 2 call :exportRecoveryKey
+if %errorlevel% == 1 call :recoverWithRecoveryKey
 
 ::goto recoverySecurityOptions
 
@@ -460,32 +472,7 @@ goto :EOF
 :logMessage
 :: %1 is the message to log
 for /f %%i in ('powershell -command "Get-Date -Format \"ddMMyyyy-HHmmss\""') do set timestamp=%%i
-echo %~1-"%timestamp%" >> %logFile%
-goto :EOF
-
-:: ===========================================
-:: Function: Check BitLocker Status
-:: ===========================================
-:checkBitLockerStatus
-:: Check if the drive is Encrypted
-manage-bde -status %targetDrive%: | find "Conversion Status" | find "Encrypted"
-if %errorlevel% equ 0 (
-    echo %COLOR_GREEN%BitLocker is already enabled on the %targetDrive%: drive.%COLOR_RESET%
-    ping -n 3 localhost > nul
-    goto :EOF
-)
-
-:: Check if the drive is Decrypted
-manage-bde -status %targetDrive%: | find "Conversion Status" | find "Decrypted"
-if %errorlevel% equ 0 (
-    echo %COLOR_YELLOW%BitLocker is not enabled on the %targetDrive%: drive.%COLOR_RESET%
-    ping -n 3 localhost > nul
-    goto :EOF
-)
-
-:: If neither Encrypted nor Decrypted, report an error
-echo %COLOR_RED%Unable to determine the BitLocker status of the %targetDrive%: drive.%COLOR_RESET%
-ping -n 3 localhost > nul
+echo %~1-%timestamp% >> %logFile%
 goto :EOF
 
 :: ===========================================
@@ -521,39 +508,28 @@ if %errorlevel% equ 1 (
     echo %COLOR_RED%Invalid selection. Defaulting to XtsAes128.%COLOR_RESET%
     set encryptionMethod=xts_aes128
 )
-echo.
 :: Enable BitLocker on the target drive
 echo %COLOR_YELLOW%Enabling BitLocker on %targetDrive%: with %encryptionMethod% encryption...%COLOR_RESET%
 echo command using: manage-bde -on %targetDrive%: -EncryptionMethod %encryptionMethod% -RecoveryPassword -used
 manage-bde -on %targetDrive%: -EncryptionMethod %encryptionMethod% -RecoveryPassword -used >> %recoveryKeyInfoFile%
 if %errorlevel% neq 0 (
-    echo %COLOR_RED%Failed to enable BitLocker on %targetDrive%.%COLOR_RESET%
-    call :logMessage "Failed to enable BitLocker on %targetDrive%"
+    echo %COLOR_RED%Failed to enable BitLocker on %targetDrive%: .%COLOR_RESET%
+    call :logMessage "Failed to enable BitLocker on %targetDrive%:."
     type %logFile%
     pause
     goto configureBitLocker
 ) 
-:: Check encryption status
-rem echo %COLOR_YELLOW%Checking encryption status...%COLOR_RESET%
-rem :checkStatusLoop
-rem for /f "tokens=3" %%a in ('manage-bde -status %targetDrive%: ^| find "Conversion Status"') do set status=%%a
-
-rem if "%status%"=="Fully" (
-rem     echo %COLOR_GREEN%BitLocker encryption completed successfully.%COLOR_RESET%
-rem     ping -n 3 localhost > nul
-rem     goto :addProtector
-rem ) else if "%status%"=="Encryption" (
-rem     for /f "tokens=3" %%a in ('manage-bde -status %targetDrive%: ^| find "Percentage Encrypted"') do set percent=%%a
-rem     echo %COLOR_YELLOW%Encryption in Progress: %percent% completed.%COLOR_RESET%
+rem call :checkEncryptionStatus %targetDrive%
+rem if "%status%"=="Encryption in Progress" (
+rem     echo %COLOR_YELLOW%Encryption is in progress on %targetDrive%: at: %percent%:...%COLOR_RESET%
 rem     timeout /t 5 > nul
-rem     goto checkStatusLoop
-rem ) else (
-rem     echo %COLOR_RED%BitLocker encryption failed.%COLOR_RESET%
-rem     ping -n 3 localhost > nul
-rem     goto configureBitLocker
+rem     call :checkEncryptionStatus %targetDrive%)
+rem if "%status%"=="Fully Encrypted" (echo %COLOR_GREEN%Successfully enabled BitLocker on %targetDrive%: with %encryptionMethod% encryption.%COLOR_RESET%)
+rem if %status%=="unknown"  (
+rem     echo %COLOR_RED%Failed to enable BitLocker on %targetDrive%.%COLOR_RESET%
+rem     echo %COLOR_RED%Script will exit.%COLOR_RESET%
+rem     exit /b 1
 rem )
-rem :addProtector
-echo %COLOR_GREEN%Successfully enabled BitLocker on %targetDrive%: with %encryptionMethod% encryption.%COLOR_RESET%
 :: Add RecoveryKey protector to the drive
 echo %COLOR_YELLOW%Adding RecoveryKey protector to drive %targetDrive%: ...%COLOR_RESET%
 echo ================================================================= >> %recoveryKeyInfoFile%
@@ -591,34 +567,15 @@ type "%recoveryKeyInfoFile%"
 echo %COLOR_GREEN%Recovery key file for %targetDrive%: created at: %recoveryKeyInfoFile%%COLOR_RESET%
 echo %COLOR_BRIGHTYELLOW%Please backup the recovery key file and the info file carefully. If you lose the recovery key, you will not be able to recover your data.%COLOR_RESET%
 echo %COLOR_GREEN%Successfully enabled BitLocker on %targetDrive%: with %encryptionMethod% encryption.%COLOR_RESET%
-call :logMessage "Successfully enabled BitLocker on %targetDrive% with %encryptionMethod% encryption"
+call :logMessage "Successfully enabled BitLocker on %targetDrive%: with %encryptionMethod% encryption at"
 PAUSE
 endlocal
 goto :EOF
 
 :: ===========================================
-:: Function: Check Encryption Status
+:: Function: Check TPM Status
 :: ===========================================
-:checkEncryptionStatus
-set local enabledelayedexpansion
-:: Check the encryption status of the drive
-set targetDrive=%1
-:checkStatusLoop
-for /f "tokens=3" %%a in ('manage-bde -status %targetDrive%: ^| find "Conversion Status"') do set status=%%a
-for /f "tokens=3" %%a in ('manage-bde -status %targetDrive%: ^| find "Percentage Encrypted"') do set percent=%%a
 
-if "%status%"=="Encryption" (
-    echo %COLOR_YELLOW%Encryption in Progress: %percent%% completed.%COLOR_RESET%
-    timeout /t 5 > nul
-    goto checkStatusLoop
-) else if "%status%"=="Fully" (
-    echo %COLOR_GREEN%BitLocker encryption completed successfully.%COLOR_RESET%
-    exit /b 0
-) else (
-    echo %COLOR_RED%BitLocker encryption failed.%COLOR_RESET%
-    exit /b 1
-)
-endlocal
 goto EOF
 
 :: ===========================================
@@ -626,28 +583,48 @@ goto EOF
 :: ===========================================
 
 :checkTPMStatus
-:: Check TPM status and write to log file
-wmic /namespace:\\root\cimv2\security\microsofttpm path win32_tpm get /value >> "%logFile%"
-if %errorlevel% neq 0 (
-    echo %COLOR_RED%Failed to check TPM status.%COLOR_RESET%
-    call :logMessage "Failed to check TPM status"
-    set "TPM_STATUS=FALSE"
-    goto :EOF
-)
+:: Check TPM status and store in a variable
+FOR /F "tokens=2 delims==" %%A IN ('wmic /namespace:\\root\cimv2\security\microsofttpm path win32_tpm get IsEnabled_InitialValue /value') DO SET IsEnabled_InitialValue=%%A
 
-:: Get the value of IsEnabled_InitialValue from the log file
-for /f "tokens=2 delims==" %%A in ('findstr /i "IsEnabled_InitialValue=" "%logFile%"') do set TPM_STATUS=%%A
-
-:: Check the value of TPM_STATUS
-if /i "%TPM_STATUS%"=="TRUE" (
-    echo %COLOR_GREEN%TPM is enabled and ready for BitLocker.%COLOR_RESET%
-    set TPM_STATUS=true
-) else (
-    echo %COLOR_RED%TPM is not enabled or not ready for BitLocker.%COLOR_RESET%
-    call :logMessage "TPM is not enabled or not ready for BitLocker"
-    set "TPM_STATUS=FALSE"
+:: Set TPM status based on IsEnabled_InitialValue
+IF /I "%IsEnabled_InitialValue%"=="TRUE" (
+    SET TPM_STATUS=TRUE
+    ECHO %COLOR_GREEN%TPM is enabled and ready for BitLocker.%COLOR_RESET%
+) ELSE (
+    SET TPM_STATUS=FALSE
+    ECHO %COLOR_RED%TPM is not available.%COLOR_RESET%
 )
-goto :EOF
+EXIT /B 0
+
+:: ===========================================
+:: Function: Check Bitlocker Status
+:: ===========================================
+
+:checkBitlockerStatus
+call :checkTPMStatus
+:: Check Bitlocker status based on TPM status and registry values
+IF "%TPM_STATUS%"=="TRUE" (
+    ECHO %COLOR_GREEN%Bitlocker can run with TPM.%COLOR_RESET%
+    SET BITLOCKER_STATUS=TRUE
+) ELSE (
+    :: Check registry values for Bitlocker without TPM
+    REG QUERY "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v UseAdvancedStartup >nul 2>&1
+    SET UseAdvancedStartup=%ERRORLEVEL%
+    REG QUERY "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v EnableBDEWithNoTPM >nul 2>&1
+    SET EnableBDEWithNoTPM=%ERRORLEVEL%
+
+    IF "%UseAdvancedStartup%"=="0" IF "%EnableBDEWithNoTPM%"=="0" (
+        ECHO %COLOR_YELLOW%Bitlocker can run without TPM.%COLOR_RESET%
+        SET BITLOCKER_STATUS=TRUE
+		ping -n 3 localhost > nul
+    ) ELSE (
+        SET TPM_STATUS=FALSE
+        SET BITLOCKER_STATUS=FALSE
+        ECHO %COLOR_RED%Bitlocker cannot run.%COLOR_RESET%
+		ping -n 3 localhost > nul
+    )
+)
+EXIT /B 0
 
 :: ===========================================
 :: Function: Check Supported Windows Edition
@@ -667,36 +644,31 @@ echo %COLOR_GREEN%%WIN_EDITION% edition is supported.%COLOR_RESET%
 goto :EOF
 
 :enableBitlockerWithoutTPM
-::set "logFilePath=%bitlockerPATH%\Logs"
-::set "logFile=%logFilePath%\bitlocker.log"
-::set "usbLogFile=%logFilePath%\bitlocker_usb.log"
-echo %COLOR_YELLOW%Checking if TPM is enabled...%COLOR_RESET%
-if not "%TPM_STATUS%"=="TRUE" (
-    echo %COLOR_YELLOW%TPM is not enabled.%COLOR_RESET%
-    echo %COLOR_YELLOW%Attempting to enable BitLocker without TPM...%COLOR_RESET%
-    ping -n 2 localhost > nul
-    reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v UseAdvancedStartup /t REG_DWORD /d 1 /f > nul 2>&1
-    reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v EnableBDEWithNoTPM /t REG_DWORD /d 1 /f > nul 2>&1
-    echo %COLOR_GREEN%BitLocker configured to work without TPM.%COLOR_RESET%
-)
+echo %COLOR_YELLOW%TPM is not enabled.%COLOR_RESET%
+echo %COLOR_YELLOW%Attempting to enable BitLocker without TPM...%COLOR_RESET%
+ping -n 2 localhost > nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v UseAdvancedStartup /t REG_DWORD /d 1 /f > nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v EnableBDEWithNoTPM /t REG_DWORD /d 1 /f > nul 2>&1
+echo %COLOR_GREEN%BitLocker configured to work without TPM.%COLOR_RESET%
 goto :EOF
 
 :checkEncryptionStatus
-set targetDrive=%1:: Get the encryption status
-for /f "tokens=3" %%a in ('manage-bde -status %targetDrive% ^| find "Conversion Status"') do set status=%%a
-for /f "tokens=3" %%a in ('manage-bde -status %targetDrive% ^| find "Percentage Encrypted"') do set percent=%%a
+:: Get the encryption status
+set targetDrive=%1
 
-if "%status%"=="Encryption" (
-    echo %COLOR_YELLOW%Encryption in Progress: %percent% completed.%COLOR_RESET%
-    timeout /t 10 > nul
-    goto checkStatusLoop
-) else if "%status%"=="Encrypted" (
-    echo %COLOR_GREEN%BitLocker encryption completed successfully.%COLOR_RESET%
-    exit /b 0
-) else (
-    echo %COLOR_RED%BitLocker encryption failed.%COLOR_RESET%
-    exit /b 1
-)
+:: Get the Conversion Status (retrieve everything after "Conversion")
+for /f "tokens=3* delims=: " %a in ('manage-bde -status %targetDrive%: ^| find "Conversion Status"') do set status=%a %b
+
+:: Get the Percentage Encrypted (retrieve the percentage)
+for /f "tokens=3 delims=: " %f in ('manage-bde -status %targetDrive%: ^| find "Percentage Encrypted"') do set percent=%f
+
+:: Determine the status
+rem if "%status%"=="Encryption in Progress" (set status=encrypting)
+rem if "%status%"=="Fully Encrypted" (set status=encrypted)
+rem if "%status%"=="Fully Decrypted" (set status=decrypted)
+
+:: If status is not determined, report an error
+if not defined status (set status=unknown)
 goto :EOF
 
 
