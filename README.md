@@ -16,37 +16,30 @@ The BitLocker Tools provide a set of utilities to manage BitLocker encryption on
 
 ## Workflow
 ```mermaid
-journey
-    title BitLocker Script Workflow
-    section Start
-      User: 5: Run bitlocker.cmd
-    section Check Drives
-      Script: 5: Check available drives
-      BitLocker: 5: Return list of drives
-      Script: 5: Display list of available drives
-      User: 5: Select a drive
-      Script: 5: Validate selected drive
-      BitLocker: 5: Return validation result
-    section Valid Drive
-      Script: 5: Check BitLocker status
-      BitLocker: 5: Return BitLocker status
-      Script: 5: Prompt for encryption method
-      User: 5: Select encryption method
-      Script: 5: Enable BitLocker with selected encryption method
-      BitLocker: 5: Return encryption status
-      Script: 5: Display encryption status
-    section BitLocker Enabled
-      Script: 5: Check encryption method
-      BitLocker: 5: Return encryption method
-      Script: 5: Check if TPM is used
-      BitLocker: 5: Return TPM status
-      Script: 5: Check partition information
-      BitLocker: 5: Return partition information
-      Script: 5: Display BitLocker status and details
-      User: 5: Perform decryption
-      Script: 5: Decrypt drive
-      BitLocker: 5: Return decryption status
-      Script: 5: Display decryption status
-    section Invalid Drive
-      Script: 5: Display "Invalid drive selected"
+flowchart TD
+    A[Run bitlocker.cmd] --> B[Check available drives]
+    B --> C[Return list of drives]
+    C --> D[Display list of available drives]
+    D --> E[Select a drive]
+    E --> F[Validate selected drive]
+    F --> G{Valid drive?}
+    G -->|Yes| H[Check BitLocker status]
+    G -->|No| I[Display Invalid drive selected]
+    H --> J{BitLocker enabled?}
+    J -->|No| K[Prompt for encryption method]
+    K --> L[Select encryption method]
+    L --> M[Enable BitLocker with selected encryption method]
+    M --> N[Return encryption status]
+    N --> O[Display encryption status]
+    J -->|Yes| P[Check encryption method]
+    P --> Q[Return encryption method]
+    Q --> R[Check if TPM is used]
+    R --> S[Return TPM status]
+    S --> T[Check partition information]
+    T --> U[Return partition information]
+    U --> V[Display BitLocker status and details]
+    V --> W[Perform decryption]
+    W --> X[Decrypt drive]
+    X --> Y[Return decryption status]
+    Y --> Z[Display decryption status]
 ```
