@@ -105,12 +105,12 @@ echo =  6. Exit                                =
 echo ===========================================
 choice /N /C 123456 /M "Your choice is: "
 
-if %errorlevel% == 6 goto end
+if %errorlevel% == 6 goto :end
 if %errorlevel% == 5 call :checkTPMStatus && goto MainMenu
-if %errorlevel% == 4 goto recoverySecurityOptions
-if %errorlevel% == 3 goto lockUnlockBitLocker
-if %errorlevel% == 2 goto configureBitLocker
-if %errorlevel% == 1 goto manageBitLockerStatus
+if %errorlevel% == 4 goto :recoverySecurityOptions
+if %errorlevel% == 3 goto :lockUnlockBitLocker
+if %errorlevel% == 2 goto :configureBitLocker
+if %errorlevel% == 1 goto :manageBitLockerStatus
 
 :: ===========================================
 :: =         Manage BitLocker Status         =
@@ -216,25 +216,56 @@ IF "%BITLOCKER_STATUS%"=="FALSE" (
     echo %COLOR_RED%Bitlocker cannot run on this system.%COLOR_RESET%
     ping -n 3 localhost > nul
     goto configureBitLocker
-) else  (
+) else (
     echo %COLOR_GREEN%Bitlocker can run on this system.%COLOR_RESET%
     call :listPartitions
     call :promptDriveSelection
-    REM call :checkEncryptionStatus %targetDrive%
-    REM if "%status%"=="Fully Decrypted" (
-        REM echo %COLOR_YELLOW%Drive %targetDrive%: is ready to be encrypted.%COLOR_RESET%
-        REM ping -n 3 localhost > nul
-        REM exit /b 0) else if "%status%"=="Fully Encrypted" ( 
-        REM echo %COLOR_YELLOW%Drive %targetDrive%: is already encrypted.%COLOR_RESET%
-        REM echo %COLOR_YELLOW%Please decrypt the drive before encrypting again or select another drive.%COLOR_RESET%
-        REM echo %COLOR_YELLOW%You can also get the decryption key by using the function create recovery key.%COLOR_RESET%
-        REM ping -n 3 localhost > nul
-        REM goto configureBitLocker
-    REM )
-    call :performEncryptBitlocker
+    call :checkEncryptionStatus %targetDrive%
+    if "!protection_status!"=="on" (
+        cls
+        echo.
+        echo %COLOR_BRIGHTRED%Drive !targetDrive!: is already encrypted.%COLOR_RESET%
+        echo %COLOR_BRIGHTRED%Script will exit.%COLOR_RESET%
+        PAUSE
+        goto configureBitLocker
+    ) else (
+        call :performEncryptBitlocker
+    )
 )
 endlocal
 goto configureBitLocker
+
+:decryptDrive
+cls
+echo off
+echo ========================================
+echo        Decrypt Drive
+echo ========================================
+setlocal enabledelayedexpansion
+call :checkBitlockerStatus
+IF "%BITLOCKER_STATUS%"=="FALSE" (
+    echo %COLOR_RED%Bitlocker cannot run on this system.%COLOR_RESET%
+    ping -n 3 localhost > nul
+    goto configureBitLocker
+) else (
+    echo %COLOR_GREEN%Bitlocker can run on this system.%COLOR_RESET%
+    call :listPartitions
+    call :promptDriveSelection
+    call :checkEncryptionStatus %targetDrive%
+    if "!protection_status!"=="off" (
+        cls
+        echo.
+        echo %COLOR_BRIGHTRED%Drive !targetDrive!: is already decrypted.%COLOR_RESET%
+        echo %COLOR_BRIGHTRED%Script will exit.%COLOR_RESET%
+        PAUSE
+        goto configureBitLocker
+    ) else (
+        call :performDecryptBitlocker
+    )
+)
+endlocal
+goto configureBitLocker
+
 
 :: ===========================================
 :: Function: Lock/Unlock BitLocker Volumes
@@ -246,141 +277,54 @@ echo ===============================================
 echo =       Lock/Unlock BitLocker Volumes         =
 echo ===============================================
 echo =  1. Lock a BitLocker volume                 =
-echo =  2. Unlock a BitLocker volume (RecoveryKey) =
-echo =  3. Unlock a BitLocker volume (USB)         =
-echo =  4. Back to Main Menu                       =
+echo =  2. Unlock a BitLocker volume               =
+echo =  3. Back to Main Menu                       =
 echo ===============================================
-choice /N /C 1234 /M "Your choice is: "
+choice /N /C 123 /M "Your choice is: "
 
-if %errorlevel% ==  4 goto MainMenu
-if %errorlevel% ==  3 call :unlockBitLockerVolumeUSB
-if %errorlevel% ==  2 call :unlockBitLockerVolumeRecoveryKey
+if %errorlevel% ==  3 goto MainMenu
+if %errorlevel% ==  2 call :unlockBitLockerVolume
 if %errorlevel% ==  1 call :lockBitLockerVolume
 
-::goto lockUnlockBitLocker
 
+
+:: ===========================================
+:: Function: Lock BitLocker Volume
+:: ===========================================
 :lockBitLockerVolume
-cls
-echo off
-echo ========================================
-echo        Lock BitLocker Volume
-echo ========================================
-setlocal enabledelayedexpansion
-
-:: List available partitions
-echo %COLOR_YELLOW%Listing available drive partitions...%COLOR_RESET%
-set "drives="
-
-:: Use WMIC to get the list of local fixed disks
-for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
-    if "%%A"=="Local Fixed Disk" (
-        set "drives=!drives! %%B"
-    )
-)
-cls
-echo %COLOR_GREEN%List partitions available for locking: %drives%%COLOR_RESET%
-echo.
-if "%drives%"=="" (
-    echo %COLOR_RED%No available drives found.%COLOR_RESET%
-    ping -n 4 localhost > nul
+call :checkBitlockerStatus
+call :listPartitions
+call :promptDriveSelection
+call :checkEncryptionStatus %targetDrive%
+if "!lock_status!" == "locked" (
+    echo %COLOR_RED%Drive %targetDrive% is already locked.%COLOR_RESET%
+    pause
     goto lockUnlockBitLocker
-)
-
-:selectDriveToLock
-echo %COLOR_YELLOW%Please select a drive to lock from the list above (e.g., C):%COLOR_RESET%
-set /p "drive=Enter the drive letter: "
-
-:: Check if the drive letter is valid and in the list of available drives
-set "validDrive=false"
-for %%D in (%drives%) do (
-    if /I "%%D"=="%drive%" (
-        set "validDrive=true"
-    )
-)
-
-if "%validDrive%"=="false" (
-    echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
-    ping -n 4 localhost > nul
-    goto selectDriveToLock
-)
-
-echo %COLOR_YELLOW%Locking drive %drive%...%COLOR_RESET%
-manage-bde -lock %drive%: > nul
-if !errorlevel! equ 0 (
-    echo %COLOR_GREEN%Drive %drive% has been locked successfully.%COLOR_RESET%
 ) else (
-    echo %COLOR_RED%Failed to lock drive %drive%. Please try again.%COLOR_RESET%
+    call :performLockBitLockerVolume %targetDrive%
 )
+goto :lockUnlockBitLocker
 
-PAUSE
-endlocal
-goto lockUnlockBitLocker
-
-:unlockBitLockerVolumeRecoveryKey
+:unlockBitLockerVolume
 cls
 echo off
 echo ========================================
 echo        Unlock BitLocker Volume
 echo ========================================
+:UnlockBitLockerVolume
 setlocal enabledelayedexpansion
-
-:: List available partitions
-echo %COLOR_YELLOW%Listing available drive partitions...%COLOR_RESET%
-set "drives="
-
-:: Use WMIC to get the list of local fixed disks
-for /f "skip=1 tokens=2,3 delims=," %%A in ('wmic logicaldisk get deviceid^, description /format:csv') do (
-    if "%%B"=="Local Fixed Disk" (
-        set "drives=!drives! %%A"
-    )
-)
-cls
-echo %COLOR_GREEN%List partitions available for unlocking: %drives%%COLOR_RESET%
-echo.
-if "%drives%"=="" (
-    echo %COLOR_RED%No available drives found.%COLOR_RESET%
-    ping -n 4 localhost > nul
+call :checkBitlockerStatus
+call :listPartitions
+call :promptDriveSelection
+call :checkEncryptionStatus %targetDrive%
+if "!lock_status!" == "unlocked" (
+    echo %COLOR_RED%Drive %targetDrive% is already unlocked.%COLOR_RESET%
+    pause
     goto lockUnlockBitLocker
-)
-
-:selectDriveToUnlock
-echo %COLOR_YELLOW%Please select a drive to unlock from the list above (e.g., C):%COLOR_RESET%
-set /p "drive=Enter the drive letter: "
-
-:: Check if the drive letter is valid and in the list of available drives
-set "validDrive=false"
-for %%D in (%drives%) do (
-    if /I "%%D"=="%drive%" (
-        set "validDrive=true"
-    )
-)
-
-if "%validDrive%"=="false" (
-    echo %COLOR_RED%Invalid drive selected. Please enter a valid drive letter from the list.%COLOR_RESET%
-    ping -n 4 localhost > nul
-    goto selectDriveToUnlock
-)
-
-echo %COLOR_YELLOW%Enter the recovery key for the drive %drive%:%COLOR_RESET%
-set /p "recoveryKey=Enter the recovery key: "
-
-echo %COLOR_YELLOW%Unlocking drive %drive%...%COLOR_RESET%
-manage-bde -unlock %drive%: -RecoveryPassword %recoveryKey% > nul
-if !errorlevel! equ 0 (
-    echo %COLOR_GREEN%Drive %drive% has been unlocked successfully.%COLOR_RESET%
 ) else (
-    echo %COLOR_RED%Failed to unlock drive %drive%. Please check the recovery key and try again.%COLOR_RESET%
+    call :performUnlockBitLockerVolume %targetDrive%
 )
-
-PAUSE
-endlocal
-goto lockUnlockBitLocker
-
-:unlockBitLockerVolumeUSB
-cls
-echo Unlock BitLocker volume with USB not implemented yet.
-pause
-goto lockUnlockBitLocker
+goto :lockUnlockBitLocker
 
 :: ===========================================
 :: Function: Recovery and Security Options
@@ -519,17 +463,6 @@ if %errorlevel% neq 0 (
     pause
     goto configureBitLocker
 ) 
-rem call :checkEncryptionStatus %targetDrive%
-rem if "%status%"=="Encryption in Progress" (
-rem     echo %COLOR_YELLOW%Encryption is in progress on %targetDrive%: at: %percent%:...%COLOR_RESET%
-rem     timeout /t 5 > nul
-rem     call :checkEncryptionStatus %targetDrive%)
-rem if "%status%"=="Fully Encrypted" (echo %COLOR_GREEN%Successfully enabled BitLocker on %targetDrive%: with %encryptionMethod% encryption.%COLOR_RESET%)
-rem if %status%=="unknown"  (
-rem     echo %COLOR_RED%Failed to enable BitLocker on %targetDrive%.%COLOR_RESET%
-rem     echo %COLOR_RED%Script will exit.%COLOR_RESET%
-rem     exit /b 1
-rem )
 :: Add RecoveryKey protector to the drive
 echo %COLOR_YELLOW%Adding RecoveryKey protector to drive %targetDrive%: ...%COLOR_RESET%
 echo ================================================================= >> %recoveryKeyInfoFile%
@@ -557,12 +490,8 @@ if %errorlevel% neq 0 (
 )
 echo %COLOR_GREEN%Successfully un-hidden the recovery key file.%COLOR_RESET%
 ping -n 3 localhost > nul
-:: Display recovery key information
-::echo ================================================================= >> "%recoveryKeyInfoFile%"
-::echo Recovery key info for drive %targetDrive% created at: %timestamp% >> "%recoveryKeyInfoFile%"
-::echo ================================================================= >> "%recoveryKeyInfoFile%"
-::manage-bde -protectors -get %targetDrive%: >> "%recoveryKeyInfoFile%"
 cls
+start explorer "%recoveryKeyPath%"
 type "%recoveryKeyInfoFile%"
 echo %COLOR_GREEN%Recovery key file for %targetDrive%: created at: %recoveryKeyInfoFile%%COLOR_RESET%
 echo %COLOR_BRIGHTYELLOW%Please backup the recovery key file and the info file carefully. If you lose the recovery key, you will not be able to recover your data.%COLOR_RESET%
@@ -573,10 +502,32 @@ endlocal
 goto :EOF
 
 :: ===========================================
-:: Function: Check TPM Status
+:: Function: Perform Decrypt BitLocker
 :: ===========================================
-
-goto EOF
+:performDecryptBitlocker
+cls
+echo ========================================
+echo        Decrypting Drive %targetDrive%
+echo ========================================
+set local enabledelayedexpansion
+:: Log the start of the decryption process 
+echo %COLOR_YELLOW%Starting decryption process for drive %targetDrive%...%COLOR_RESET%
+echo Command using: manage-bde -off %targetDrive%:
+PAUSE
+manage-bde -off %targetDrive%:
+call :checkBitlockerPerformStatus %targetDrive%
+rem if %errorlevel% equ 0 (
+rem     :: Log success
+rem     call :logMessage "Decryption process started successfully for drive %targetDrive%:"
+rem     echo %COLOR_GREEN%Decryption process started successfully.%COLOR_RESET%
+rem ) else (
+rem     :: Log failure
+rem     call :logMessage "Failed to start decryption process for drive %targetDrive%:"
+rem     echo %COLOR_RED%Failed to start decryption process.%COLOR_RESET%
+rem )
+ping -n 5 localhost > nul
+endlocal
+goto :EOF
 
 :: ===========================================
 :: Function: Check TPM Status
@@ -643,6 +594,10 @@ if %errorlevel% neq 0 (
 echo %COLOR_GREEN%%WIN_EDITION% edition is supported.%COLOR_RESET%
 goto :EOF
 
+
+:: ===========================================
+:: Function: Enable BitLocker without TPM
+:: ===========================================
 :enableBitlockerWithoutTPM
 echo %COLOR_YELLOW%TPM is not enabled.%COLOR_RESET%
 echo %COLOR_YELLOW%Attempting to enable BitLocker without TPM...%COLOR_RESET%
@@ -652,30 +607,200 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\FVE" /v EnableBDEWithNoTPM /t REG_DWOR
 echo %COLOR_GREEN%BitLocker configured to work without TPM.%COLOR_RESET%
 goto :EOF
 
+:: Function that checks the encryption status of a selected drive.
+:: Return values that can be used in a script that help determine the encryption status.
+:: ===========================================
+:: Function: Check Encryption Status
+:: ===========================================
 :checkEncryptionStatus
-:: Get the encryption status
-set targetDrive=%1
-
 :: Get the Conversion Status (retrieve everything after "Conversion")
-for /f "tokens=3* delims=: " %a in ('manage-bde -status %targetDrive%: ^| find "Conversion Status"') do set status=%a %b
+for /f "tokens=3* delims=: " %%a in ('manage-bde -status %targetDrive%: ^| find "Conversion Status"') do set conversion_status=%%a %%b
 
 :: Get the Percentage Encrypted (retrieve the percentage)
-for /f "tokens=3 delims=: " %f in ('manage-bde -status %targetDrive%: ^| find "Percentage Encrypted"') do set percent=%f
+for /f "tokens=3 delims=: " %%f in ('manage-bde -status %targetDrive%: ^| find "Percentage Encrypted"') do set percent=%%f
 
-:: Determine the status
-rem if "%status%"=="Encryption in Progress" (set status=encrypting)
-rem if "%status%"=="Fully Encrypted" (set status=encrypted)
-rem if "%status%"=="Fully Decrypted" (set status=decrypted)
+:: Get the Protection Status (retrieve everything after "Protection Status")
+for /f "tokens=3* delims=: " %%p in ('manage-bde -status %targetDrive%: ^| find "Protection Status"') do set protection_status=%%p %%q
 
-:: If status is not determined, report an error
-if not defined status (set status=unknown)
+:: Get the Lock Status (retrieve everything after "Lock Status")
+for /f "tokens=3* delims=: " %%l in ('manage-bde -status %targetDrive%: ^| find "Lock Status"') do set lock_status=%%l %%m
+
+:: Determine the conversion status
+if "%conversion_status%"=="Encryption in Progress" (set conversion_status=encrypting)
+if "%conversion_status%"=="Decryption in Progress" (set conversion_status=decrypting)
+if "%conversion_status%"=="Fully Encrypted" (set conversion_status=encrypted)
+if "%conversion_status%"=="Fully Decrypted" (set conversion_status=decrypted)
+if "%conversion_status%"=="Used Space Only Encrypted" (set conversion_status=encrypted)
+if not defined conversion_status (set conversion_status=unknown)
+
+:: Determine the protection status
+if "%protection_status%"=="Protection Off" (set protection_status=off)
+if "%protection_status%"=="Protection On" (set protection_status=on)
+if not defined protection_status (set protection_status=unknown)
+
+:: Determine the lock status
+if "%lock_status%"=="Unlocked" (set lock_status=unlocked)
+if "%lock_status%"=="Locked" (set lock_status=locked)
+if not defined lock_status (set lock_status=unknown)
+
 goto :EOF
 
+:: Function that checks and echo the status of the BitLocker encryption process.
+:: It will navigate through the different statuses until the process is completed.
+:: ===========================================
+:: Function: Check Bitlocker Perform Status
+:: ===========================================
+:checkBitlockerPerformStatus
+:: End any previous local environment
+endlocal
 
-:EOF
+:: Get the target drive from the first argument
+set targetDrive=%1
+
+:checkStatus
+:: Call the checkEncryptionStatus function
+call :checkEncryptionStatus %targetDrive%
+
+:: Determine the conversion_status based on the value of the conversion_status variable
+if "%conversion_status%"=="encrypted" (
+    echo %COLOR_GREEN%Drive %targetDrive% is fully encrypted.%COLOR_RESET%
+) else if "%conversion_status%"=="decrypted" (
+    echo %COLOR_GREEN%Drive %targetDrive% is fully decrypted.%COLOR_RESET%
+) else if "%conversion_status%"=="encrypting" (
+    echo %COLOR_YELLOW%Drive %targetDrive% is currently encrypting %percent% complete. Waiting for completion...%COLOR_RESET%
+    timeout /t 5 /nobreak >nul
+    goto checkStatus
+) else if "%conversion_status%"=="decrypting" (
+    echo %COLOR_YELLOW%Drive %targetDrive% is currently decrypting %percent% complete. Waiting for completion...%COLOR_RESET%
+    timeout /t 5 /nobreak >nul
+    goto checkStatus
+) else (
+    echo %COLOR_RED%Drive %targetDrive% encryption conversion_status is unknown.%COLOR_RESET%
+)
+
+:: End of function
+goto :EOF
+
+:: ===========================================
+:: Function: Perform Lock BitLocker Volume
+:: ===========================================
+:performLockBitLockerVolume
+:: Get the target drive from the first argument
+set targetDrive=%1
+
+:: Log the start of the lock process
+call :logMessage "Starting lock process for drive %targetDrive%"
+
+:: Lock the BitLocker volume
+manage-bde -lock %targetDrive%: -ForceDismount
+if %errorlevel% equ 0 (
+    :: Log success
+    call :logMessage "Lock process completed successfully for drive %targetDrive%"
+    echo %COLOR_GREEN%Drive %targetDrive% has been locked successfully.%COLOR_RESET%
+) else (
+    :: Log failure
+    call :logMessage "Failed to lock drive %targetDrive%"
+    echo %COLOR_RED%Failed to lock drive %targetDrive%.%COLOR_RESET%
+)
+goto :EOF
+
+:: ===========================================
+:: Function: Perform Unlock BitLocker Volume
+:: ===========================================
+:performUnlockBitLockerVolume
+
+goto :EOF
+
+:: ===========================================
+:: Function: Get Protectors Info
+:: ===========================================
+:getProtectorsInfo
+:: Get the target drive from the first argument
+set target_drive=%1
+
+:: Initialize protector info variables
+set numerical_password=unknown
+set external_key=unknown
+set external_key_file_name=unknown
+
+:: Call PowerShell script to get protector information
+for /f "tokens=2 delims=: " %%i in ('powershell -Command ^
+    "param([string]$targetDrive); ^
+    $numericalPassword = 'unknown'; ^
+    $externalKey = 'unknown'; ^
+    $externalKeyFileName = 'unknown'; ^
+    $protectors = manage-bde -protectors -get $targetDrive; ^
+    foreach ($line in $protectors) { ^
+        if ($line -match 'Numerical Password') { ^
+            $numericalPassword = ($line -split 'ID: ')[1].Trim(); ^
+        } elseif ($line -match 'External Key') { ^
+            $externalKey = ($line -split 'ID: ')[1].Trim(); ^
+        } elseif ($line -match 'External Key File Name') { ^
+            $externalKeyFileName = ($line -split ': ')[1].Trim(); ^
+        } ^
+    }; ^
+    Write-Output 'Numerical Password: ' + $numericalPassword; ^
+    Write-Output 'External Key: ' + $externalKey; ^
+    Write-Output 'External Key File Name: ' + $externalKeyFileName;" -targetDrive %target_drive%') do (
+    if "%%i"=="Numerical Password" set numerical_password=%%j
+    if "%%i"=="External Key" set external_key=%%j
+    if "%%i"=="External Key File Name" set external_key_file_name=%%j
+)
+
+:: Log the protector information
+call :logMessage "Numerical Password: %numerical_password%"
+call :logMessage "External Key: %external_key%"
+call :logMessage "External Key File Name: %external_key_file_name%"
+
+goto :EOF
+
+:: ===========================================
+:: Function: Perform Unlock BitLocker Volume
+:: ===========================================
+:performUnlockBitLockerVolume
+:: Get the target drive from the first argument
+set targetDrive=%1
+
+:: Log the start of the unlock process
+call :logMessage "Starting unlock process for drive %targetDrive%"
+
+:: Get protector information
+call :getProtectorsInfo %targetDrive%
+
+:: Try to unlock the BitLocker volume using Recovery Password
+manage-bde -unlock %targetDrive%: -RecoveryPassword YOUR_RECOVERY_PASSWORD
+if %errorlevel% equ 0 (
+    :: Log success
+    call :logMessage "Unlock process completed successfully using Recovery Password for drive %targetDrive%"
+    echo %COLOR_GREEN%Drive %targetDrive% has been unlocked successfully using Recovery Password.%COLOR_RESET%
+    goto :EOF
+)
+
+:: Try to unlock the BitLocker volume using Recovery Key
+manage-bde -unlock %targetDrive%: -RecoveryKey X:\path\to\recoverykey.bek
+if %errorlevel% equ 0 (
+    :: Log success
+    call :logMessage "Unlock process completed successfully using Recovery Key for drive %targetDrive%"
+    echo %COLOR_GREEN%Drive %targetDrive% has been unlocked successfully using Recovery Key.%COLOR_RESET%
+    goto :EOF
+)
+
+:: Try to unlock the BitLocker volume using Password
+manage-bde -unlock %targetDrive%: -Password
+if %errorlevel% equ 0 (
+    :: Log success
+    call :logMessage "Unlock process completed successfully using Password for drive %targetDrive%"
+    echo %COLOR_GREEN%Drive %targetDrive% has been unlocked successfully using Password.%COLOR_RESET%
+    goto :EOF
+)
+
+:: Log failure
+call :logMessage "Failed to unlock drive %targetDrive% using all available methods"
+echo %COLOR_RED%Failed to unlock drive %targetDrive% using all available methods.%COLOR_RESET%
+
+goto :EOF
 
 :end
 cls
 echo Exiting BitLocker Management...
 exit /b
-

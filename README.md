@@ -15,38 +15,38 @@
 The BitLocker Tools provide a set of utilities to manage BitLocker encryption on Windows systems. These tools help you enable, disable, and manage BitLocker encryption on your drives with ease.
 
 ## Workflow
-
-
 ```mermaid
-sequenceDiagram
-    participant User
-    participant Script
-    participant BitLocker
-
-    User->>Script: Run bitlocker.cmd
-    Script->>BitLocker: Check available drives
-    BitLocker-->>Script: Return list of drives
-    Script->>User: Display list of available drives
-    User->>Script: Select a drive
-    Script->>BitLocker: Validate selected drive
-    BitLocker-->>Script: Return validation result
-    alt Valid drive
-        Script->>BitLocker: Check BitLocker status
-        BitLocker-->>Script: Return BitLocker status
-        alt BitLocker not enabled
-            Script->>BitLocker: Enable BitLocker with AES-256 encryption
-            BitLocker-->>Script: Return encryption status
-            Script->>User: Display encryption status
-        else BitLocker enabled
-            Script->>BitLocker: Check encryption method
-            BitLocker-->>Script: Return encryption method
-            Script->>BitLocker: Check if TPM is used
-            BitLocker-->>Script: Return TPM status
-            Script->>BitLocker: Check partition information
-            BitLocker-->>Script: Return partition information
-            Script->>User: Display BitLocker status and details
-        end
-    else Invalid drive
-        Script->>User: Display "Invalid drive selected"
-    end
+journey
+    title BitLocker Script Workflow
+    section Start
+      User: 5: Run bitlocker.cmd
+    section Check Drives
+      Script: 5: Check available drives
+      BitLocker: 5: Return list of drives
+      Script: 5: Display list of available drives
+      User: 5: Select a drive
+      Script: 5: Validate selected drive
+      BitLocker: 5: Return validation result
+    section Valid Drive
+      Script: 5: Check BitLocker status
+      BitLocker: 5: Return BitLocker status
+      Script: 5: Prompt for encryption method
+      User: 5: Select encryption method
+      Script: 5: Enable BitLocker with selected encryption method
+      BitLocker: 5: Return encryption status
+      Script: 5: Display encryption status
+    section BitLocker Enabled
+      Script: 5: Check encryption method
+      BitLocker: 5: Return encryption method
+      Script: 5: Check if TPM is used
+      BitLocker: 5: Return TPM status
+      Script: 5: Check partition information
+      BitLocker: 5: Return partition information
+      Script: 5: Display BitLocker status and details
+      User: 5: Perform decryption
+      Script: 5: Decrypt drive
+      BitLocker: 5: Return decryption status
+      Script: 5: Display decryption status
+    section Invalid Drive
+      Script: 5: Display "Invalid drive selected"
 ```
