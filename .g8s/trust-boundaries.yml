@@ -1,0 +1,3 @@
+# security profile — deny-all, allow-some (everything is P0-adjacent)
+trust_boundaries:
+  - "**"

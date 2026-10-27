@@ -1,0 +1,26 @@
+name: BitLocker Tools CI & Quality Gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Batch Script & SDD Spec Sync Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify Batch Scripts & Spec-Code Sync
+        run: |
+          test -f bitlocker.cmd
+          test -f checkProtectionStatus.bat
+          grep -qi "manage-bde" bitlocker.cmd
+          bash tools/ci_spec_code_sync.sh
